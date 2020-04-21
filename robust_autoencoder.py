@@ -78,7 +78,7 @@ class RobustAutoencoder():
         if os.path.splitext(record)[1] == ".npy":
             ecg = np.load(record)
         elif os.path.splitext(record)[1] == ".mat":
-            ecg = sio.loadmat(record[-44:])['val'].squeeze()# hack for different path
+            ecg = sio.loadmat(record[-35:])['val'].squeeze()# hack for different path
         else: # Assumes binary 16 bit integers
             with open(record, 'r') as fid:
                 ecg = np.fromfile(fid, dtype=np.int16)
@@ -108,7 +108,7 @@ class RobustAutoencoder():
         if os.path.splitext(record)[1] == ".npy":
             ecg = np.load(record)
         elif os.path.splitext(record)[1] == ".mat":
-            ecg = sio.loadmat(record[-44:])['val'].squeeze()# hack for different path
+            ecg = sio.loadmat(record[-35:])['val'].squeeze()# hack for different path
         else: # Assumes binary 16 bit integers
             with open(record, 'r') as fid:
                 ecg = np.fromfile(fid, dtype=np.int16)
