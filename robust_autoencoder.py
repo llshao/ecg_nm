@@ -10,7 +10,7 @@ import os
 import random
 import time
 
-
+import copy as cp
 # params for ecg_seg & save file path
 STEP = 256
 POST_FIX_INDEX = -10 # file_path[-10:] 'AXXXX.mat'
@@ -243,11 +243,11 @@ class RobustAutoencoder():
         mcc_model_name = params['model_name']
         
         # callbacks
-        from keras.callbacks.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+        from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
         stopping = EarlyStopping(monitor='val_loss', mode='min', min_delta= 0.00005, verbose=1, patience=int(0.15*MAX_EPOCHS))
         checkpointer = ModelCheckpoint(filepath=mcc_model_name, monitor='val_loss', save_best_only=True)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=2,
-                                      verbose=0, mode='auto', min_delta=0.0001, cooldown=0, min_lr=1e-6)
+                                      verbose=0, mode='auto', cooldown=0, min_lr=1e-6)
         # fit
         if params['train_type'] == 0:
             self.history = self.model.fit(self.train_scaled, self.train_scaled, batch_size=batch_size, epochs=MAX_EPOCHS, 
@@ -272,16 +272,16 @@ class RobustAutoencoder():
             saved_model = load_model(params['model_name'])
         
         if params['train_type'] == 0: 
-            self.train_recon = saved_model.predict(self.dev_noisy)
-            self.dev_recon = saved_model.predict(self.train_noisy)
+            self.train_recon = saved_model.predict(self.train_noisy)
+            self.dev_recon = saved_model.predict(self.dev_noisy)
             
         if params['train_type'] == 1 :
-            self.train_recon = saved_model.predict(self.dev_noisy)
-            self.dev_recon = saved_model.predict(self.train_noisy)
+            self.train_recon = saved_model.predict(self.train_noisy)
+            self.dev_recon = saved_model.predict(self.dev_noisy)
          
         if params['train_type'] == 2 :
-            self.train_recon = saved_model.predict(self.dev_noisy)
-            self.dev_recon = saved_model.predict(self.train_noisy)
+            self.train_recon = saved_model.predict(self.train_noisy)
+            self.dev_recon = saved_model.predict(self.dev_noisy)
             
     def transform_segmented(self, origin, segments, model):
         '''
@@ -299,11 +299,12 @@ class RobustAutoencoder():
         start = 0
         for data in origin:
             # reshape and scale
-            data = data.reshape(-1,STEP)
-            _, scales, bias = self.scale_input(data)
+            data_cp = cp.copy(data)
+            data_cp = data_cp.reshape(-1,STEP)
+            _, scales, bias = self.scale_input(data_cp)
             # model predict and scale back
-            data_scaled = segments[start:start+len(data)]
-            start += len(data)
+            data_scaled = segments[start:start+len(data_cp)]
+            start += len(data_cp)
             origin_scale = self.scale_back(model.predict(data_scaled), scales, bias)
             transformed.append(origin_scale.reshape(-1,1).squeeze())
         return np.array(transformed).squeeze() # keep same dimension as origin[0] data  
@@ -323,11 +324,12 @@ class RobustAutoencoder():
         start = 0
         for data in origin:
             # reshape and scale
-            data = data.reshape(-1,STEP)
-            _, scales, bias = self.scale_input(data)
+            data_cp = cp.copy(data)
+            data_cp = data_cp.reshape(-1,STEP)
+            _, scales, bias = self.scale_input(data_cp)
             # model predict and scale back
-            data_scaled = segments[start:start+len(data)]
-            start += len(data)
+            data_scaled = segments[start:start+len(data_cp)]
+            start += len(data_cp)
             origin_scale = self.scale_back(data_scaled, scales, bias)
             transformed.append(origin_scale.reshape(-1,1).squeeze())
         return np.array(transformed).squeeze() # keep same dimension as origin[0] data
@@ -347,10 +349,11 @@ class RobustAutoencoder():
         origin = np.array(origin)
         for data in origin:
             # reshape and scale
-            data = data.reshape(-1,STEP)
-            data_scaled, scales, bias = self.scale_input(data)
+            data_cp = cp.copy(data)
+            data_cp = data_cp.reshape(-1,STEP)
+            data_scaled, scales, bias = self.scale_input(data_cp)
             # model predict and scale back
-            origin_scale = scale_back(model.predict(data_scaled), scales, bias)
+            origin_scale = self.scale_back(model.predict(data_scaled), scales, bias)
             transformed.append(origin_scale.reshape(-1,1).squeeze())
         return np.array(transformed).squeeze() # keep same dimension as origin[0] data
     
@@ -421,43 +424,46 @@ class RobustAutoencoder():
         
         ## to be saved
         self.train_noisy = self.scale_back_noisy(self.train[0], self.train_noisy)
-        self.dev_noisy = self.scale_back_noisy(self.dev[0], self.train_noisy)
+        self.dev_noisy = self.scale_back_noisy(self.dev[0], self.dev_noisy)
         #save_transformed(path_noisy_train, train_mix_db30, train_path[2])
         #save_json(train_json, 'examples/'+ path_noisy_train, train_path[2], train_path[1])
         self.save_transformed(params['store_data_folder'], self.train_noisy, 
                               self.train[2], 'train_'+ params['experiment_name'])
         self.save_json(params['store_json']+'_train'+'.json', params['store_data_folder'], 
                        self.train[2], self.train[1], 'train_'+params['experiment_name'])
-        self.save_transformed(params['store_data_folder'], self.dev_noisy, self.train[2], 
+        
+        self.save_transformed(params['store_data_folder'], self.dev_noisy, self.dev[2], 
                               'dev_'+ params['experiment_name'])
         self.save_json(params['store_json']+'_dev'+'.json', params['store_data_folder'], 
-                       self.train[2], self.train[1], 'dev_'+params['experiment_name'])  
+                       self.dev[2], self.dev[1], 'dev_'+params['experiment_name'])  
         
         self.train_recon = self.scale_back_noisy(self.train[0], self.train_recon)
-        self.dev_recon = self.scale_back_noisy(self.dev[0], self.train_recon)
+        self.dev_recon = self.scale_back_noisy(self.dev[0], self.dev_recon)
         #save_transformed(path_noisy_train_mcc, train_mix_db30_mcc_transformed, train_path[2])
         #save_json(mse_train_json, 'examples/'+ path_noisy_train_mse, train_path[2], train_path[1])
         self.save_transformed(params['store_data_folder'], self.train_recon, 
                               self.train[2], 'train_recon_'+ params['experiment_name'])
         self.save_json(params['store_json']+'_train_recon'+'.json', params['store_data_folder'], 
                        self.train[2], self.train[1], 'train_recon_'+params['experiment_name'])
-        self.save_transformed(params['store_data_folder'], self.dev_recon, self.train[2], 
+        
+        self.save_transformed(params['store_data_folder'], self.dev_recon, self.dev[2], 
                               'dev_recon_'+ params['experiment_name'])
         self.save_json(params['store_json']+'_dev_recon'+'.json', params['store_data_folder'], 
-                       self.train[2], self.train[1], 'dev_recon_'+params['experiment_name'])  
+                       self.dev[2], self.dev[1], 'dev_recon_'+params['experiment_name'])  
         
         self.train_trans = self.transform(self.train[0], saved_model)
         self.dev_trans = self.transform(self.dev[0], saved_model)
         #save_transformed(path_origin_train_mcc, train_origin_mcc_transformed, train_path[2])
         #save_json(mcc_train_json, 'examples/'+ path_origin_train_mcc, train_path[2], train_path[1])
-        self.save_transformed(params['store_data_folder'], self.train_mcc, 
+        self.save_transformed(params['store_data_folder'], self.train_trans, 
                               self.train[2], 'train_trans_'+ params['experiment_name'])
         self.save_json(params['store_json']+'_train_trans'+'.json', params['store_data_folder'], 
                        self.train[2], self.train[1], 'train_trans_'+params['experiment_name'])
-        self.save_transformed(params['store_data_folder'], self.dev_recon, self.train[2], 
+        
+        self.save_transformed(params['store_data_folder'], self.dev_trans, self.dev[2], 
                               'dev_trans_'+ params['experiment_name'])
         self.save_json(params['store_json']+'_dev_trans'+'.json', params['store_data_folder'], 
-                       self.train[2], self.train[1], 'dev_trans_'+params['experiment_name'])  
+                       self.dev[2], self.dev[1], 'dev_trans_'+params['experiment_name'])  
          
             
 if __name__ == "__main__":
@@ -474,7 +480,7 @@ if __name__ == "__main__":
         'train_type': 1, #0: clean-clean 1: noisy-clean 2: noisy-noisy
         'loss': 'mcc',
         'MAX_EPOCHS': 80,
-        'batch_size': 32,
+        'batch_size': 128,
         'input_size': 256,
         'hidden_size': 64,
         'lr': 0.01,
